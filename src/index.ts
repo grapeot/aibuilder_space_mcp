@@ -5,65 +5,58 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import dotenv from "dotenv";
-import { readFile, writeFile, access } from "fs/promises";
+import { readFile, writeFile, access, mkdir } from "fs/promises";
 import { join } from "path";
 import { homedir } from "os";
 
-// 加载环境变量
 dotenv.config();
 
-// 缓存文件路径
 const CACHE_DIR = join(homedir(), ".ai-builders-mcp-cache");
 const DEPLOYMENT_GUIDE_CACHE = join(CACHE_DIR, "deployment_guide_cache.json");
 
-// 确保缓存目录存在
 async function ensureCacheDir() {
   try {
     await access(CACHE_DIR);
   } catch {
-    await import("fs").then(fs => fs.promises.mkdir(CACHE_DIR, { recursive: true }));
+    await mkdir(CACHE_DIR, { recursive: true });
   }
 }
 
-// 默认部署指南
 function getDefaultDeploymentGuide(serviceType: string = "fastapi"): string {
-  return `# ${serviceType.toUpperCase()} 服务部署指南
+  return `# ${serviceType.toUpperCase()} Service Deployment Guide
 
-## 前提条件
-- 公开的GitHub仓库
-- 监听PORT环境变量
-- 包含依赖配置文件（requirements.txt/package.json等）
+## Prerequisites
+- Public GitHub repository
+- Listen on PORT environment variable
+- Include dependency files (requirements.txt/package.json)
 
-## 部署步骤
-1. 准备Dockerfile
-2. 配置环境变量
-3. 设置AI_BUILDER_TOKEN
-4. 部署到目标平台
+## Deployment Steps
+1. Prepare a Dockerfile
+2. Configure environment variables
+3. Set AI_BUILDER_TOKEN
+4. Deploy to target platform
 
-## 认证配置
-- 使用Bearer Token认证
-- 从环境变量读取AI_BUILDER_TOKEN
-- 在Authorization头中包含token
+## Authentication
+- Use Bearer Token authentication
+- Read AI_BUILDER_TOKEN from environment variables
+- Include token in Authorization header
 
-## 环境变量示例
+## Environment Example
 \`\`\`bash
 AI_BUILDER_TOKEN=your_token_here
 DEPLOYMENT_TARGET=production
 PORT=8000
 \`\`\`
 
-## 代码示例
+## Code Example
 \`\`\`python
 import os
-import requests
 
-# 从环境变量读取token
 token = os.getenv("AI_BUILDER_TOKEN")
 headers = {"Authorization": f"Bearer {token}"}
 \`\`\``;
 }
 
-// 获取缓存的部署指南
 async function getCachedDeploymentGuide(): Promise<{
   content: string;
   cached_at?: string;
@@ -72,7 +65,6 @@ async function getCachedDeploymentGuide(): Promise<{
   await ensureCacheDir();
   
   try {
-    // 检查缓存是否存在且未过期（24小时）
     const cacheContent = await readFile(DEPLOYMENT_GUIDE_CACHE, 'utf-8');
     const cacheData = JSON.parse(cacheContent);
     const cachedTime = new Date(cacheData.cached_at);
@@ -82,10 +74,8 @@ async function getCachedDeploymentGuide(): Promise<{
       return cacheData;
     }
   } catch {
-    // 缓存不存在或无效，继续获取新内容
   }
   
-  // 获取最新内容
   try {
     const response = await fetch("https://www.ai-builders.com/resources/students/deployment-prompt.md");
     if (response.ok) {
@@ -96,20 +86,18 @@ async function getCachedDeploymentGuide(): Promise<{
         source: "remote"
       };
       
-      // 保存缓存
       try {
         await writeFile(DEPLOYMENT_GUIDE_CACHE, JSON.stringify(cacheData, null, 2));
       } catch (error) {
-        console.error("缓存写入失败:", error);
+        console.error("Cache write failed:", error);
       }
       
       return cacheData;
     }
   } catch (error) {
-    console.error("获取远程部署指南失败:", error);
+    console.error("Failed to fetch remote deployment guide:", error);
   }
   
-  // 网络失败时使用默认内容
   return {
     content: getDefaultDeploymentGuide(),
     cached_at: new Date().toISOString(),
@@ -117,7 +105,6 @@ async function getCachedDeploymentGuide(): Promise<{
   };
 }
 
-// 创建MCP服务器
 const server = new Server(
   {
     name: "ai-builders-coach",
@@ -130,20 +117,29 @@ const server = new Server(
   }
 );
 
-// 工具处理
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
   
   try {
     switch (name) {
       case "get_api_specification": {
-        // 直接获取OpenAPI规范（不缓存）
         const response = await fetch("https://www.ai-builders.com/resources/students-backend/openapi.json");
         if (!response.ok) {
-          throw new Error(`无法获取OpenAPI规范: HTTP ${response.status}`);
+          throw new Error(`Failed to fetch OpenAPI specification: HTTP ${response.status}`);
         }
         
         const openapiSpec = await response.json();
+        let baseUrl = "https://www.ai-builders.com/resources/students-backend";
+        try {
+          if (openapiSpec?.servers?.length) {
+            const url = openapiSpec.servers[0].url as string;
+            if (url.startsWith("http")) {
+              baseUrl = url;
+            } else {
+              baseUrl = `https://www.ai-builders.com${url}`;
+            }
+          }
+        } catch {}
         
         return {
           content: [
@@ -152,14 +148,27 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               text: JSON.stringify({
                 openapi_spec: openapiSpec,
                 endpoint_info: {
-                  base_url: "https://api.ai-builders.com",
-                  description: "AI Builders平台API基础地址",
-                  note: "所有API调用都需要基于此URL"
+                  base_url: baseUrl,
+                  description: "Base URL for the AI Builders API",
+                  note: "All API calls should use this base URL"
                 },
                 authentication: {
                   type: "bearer_token",
                   header: "Authorization: Bearer {AI_BUILDER_TOKEN}",
-                  token_source: "环境变量 AI_BUILDER_TOKEN"
+                  token_source: "Environment variable AI_BUILDER_TOKEN"
+                },
+                sdk_compatibility: {
+                  openai_sdk_compatible: true,
+                  usage_note: "You can use OpenAI-compatible SDKs against this API.",
+                  example_node: {
+                    baseURL: baseUrl,
+                    endpoint: "/v1/chat/completions"
+                  }
+                },
+                mcp_recommendation: {
+                  note: "If running via an MCP server, call get_auth_token and then create_env_file to configure .env",
+                  tools: ["get_auth_token", "create_env_file"],
+                  env_key: "AI_BUILDER_TOKEN"
                 }
               }, null, 2)
             }
@@ -180,7 +189,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 service_type: serviceType,
                 cached_at: cachedGuide.cached_at,
                 source: cachedGuide.source,
-                authentication_note: "部署和开发都需要使用AI_BUILDER_TOKEN，建议使用.env文件管理"
+                authentication_note: "Both deployment and development require AI_BUILDER_TOKEN; manage it via a .env file"
               }, null, 2)
             }
           ]
@@ -196,34 +205,104 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 authentication_model: {
                   token_type: "AI_BUILDER_TOKEN",
                   usage_scenarios: ["deployment", "development", "api_calls"],
-                  shared_principle: "同一个token在部署和开发阶段都使用",
+                  shared_principle: "Use the same token for both deployment and development",
                   best_practices: [
-                    "使用.env文件管理token",
-                    "不要将token硬编码在代码中",
-                    "在.gitignore中添加.env避免提交",
-                    "为不同环境设置不同的token"
+                    ".env file management",
+                    "Do not hardcode tokens",
+                    "Add .env to .gitignore",
+                    "Use different tokens per environment"
                   ]
                 },
                 environment_setup: {
                   example_env_content: "AI_BUILDER_TOKEN=your_token_here\nDEPLOYMENT_TARGET=development",
-                  loading_method: "python-dotenv或类似工具加载环境变量",
-                  usage_example: `import os
-from dotenv import load_dotenv
-
-load_dotenv()  # 加载.env文件
-
-token = os.getenv("AI_BUILDER_TOKEN")
-headers = {"Authorization": f"Bearer {token}"}`
+                  loading_method: "Load environment variables using dotenv or similar",
+                  usage_example: `import os\nfrom dotenv import load_dotenv\n\nload_dotenv()\n\ntoken = os.getenv("AI_BUILDER_TOKEN")\nheaders = {"Authorization": f"Bearer {token}"}`
                 },
-                deployment_note: "部署时平台会自动注入AI_BUILDER_TOKEN，但开发时仍需手动设置"
+                deployment_note: "Platforms may inject AI_BUILDER_TOKEN at deploy time; set it manually during development"
               }, null, 2)
             }
           ]
         };
       }
+
+      case "get_auth_token": {
+        const masked = args?.masked !== false;
+        const token = process.env.AI_BUILDER_TOKEN || "";
+        const available = !!token;
+        let value = token;
+        if (masked && token) {
+          const start = token.slice(0, 4);
+          const end = token.slice(-4);
+          value = `${start}${"*".repeat(Math.max(0, token.length - 8))}${end}`;
+        }
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                available,
+                token: value,
+                masked,
+                note: available
+                  ? "Use this token to configure your .env as AI_BUILDER_TOKEN"
+                  : "AI_BUILDER_TOKEN is not set in server environment"
+              }, null, 2)
+            }
+          ]
+        };
+      }
+
+      case "create_env_file": {
+        const target_dir = args?.target_dir;
+        const overwrite = args?.overwrite === true;
+        if (!target_dir || typeof target_dir !== "string") {
+          throw new Error("target_dir is required");
+        }
+        const token = process.env.AI_BUILDER_TOKEN || "";
+        if (!token) {
+          throw new Error("AI_BUILDER_TOKEN is not set in server environment");
+        }
+        const filePath = join(target_dir, ".env");
+        try {
+          await mkdir(target_dir, { recursive: true });
+          if (!overwrite) {
+            try {
+              await access(filePath);
+              return {
+                content: [
+                  {
+                    type: "text",
+                    text: JSON.stringify({
+                      written: false,
+                      path: filePath,
+                      reason: "File already exists; set overwrite=true to replace"
+                    }, null, 2)
+                  }
+                ]
+              };
+            } catch {}
+          }
+          const envContent = `AI_BUILDER_TOKEN=${token}\n`;
+          await writeFile(filePath, envContent);
+          return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  written: true,
+                  path: filePath
+                }, null, 2)
+              }
+            ]
+          };
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          throw new Error(`Failed to write .env: ${msg}`);
+        }
+      }
       
       default:
-        throw new Error(`未知的工具: ${name}`);
+        throw new Error(`Unknown tool: ${name}`);
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -233,7 +312,7 @@ headers = {"Authorization": f"Bearer {token}"}`
           type: "text",
           text: JSON.stringify({
             error: errorMessage,
-            suggestion: "请检查网络连接或稍后重试"
+            suggestion: "Check network connection or retry later"
           })
         }
       ],
@@ -242,13 +321,12 @@ headers = {"Authorization": f"Bearer {token}"}`
   }
 });
 
-// 工具列表
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: [
       {
         name: "get_api_specification",
-        description: "获取AI Builders平台的OpenAPI规范，包含完整的endpoint信息",
+        description: "Retrieve the OpenAPI specification with endpoint details",
         inputSchema: {
           type: "object",
           properties: {}
@@ -256,13 +334,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: "get_deployment_guide",
-        description: "获取部署指导，包含缓存机制",
+        description: "Get deployment guidance with caching",
         inputSchema: {
           type: "object",
           properties: {
             service_type: {
               type: "string",
-              description: "服务类型（如fastapi、express等）",
+              description: "Service type (e.g., fastapi, express)",
               default: "fastapi"
             }
           }
@@ -270,24 +348,56 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: "explain_authentication_model",
-        description: "详细解释认证机制，强调部署和开发的共享使用",
+        description: "Explain authentication model for shared deployment and development use",
         inputSchema: {
           type: "object",
           properties: {}
+        }
+      },
+      {
+        name: "get_auth_token",
+        description: "Return AI_BUILDER_TOKEN from environment (masked by default)",
+        inputSchema: {
+          type: "object",
+          properties: {
+            masked: {
+              type: "boolean",
+              description: "Return masked token if true",
+              default: true
+            }
+          }
+        }
+      },
+      {
+        name: "create_env_file",
+        description: "Create a .env file with AI_BUILDER_TOKEN at the target directory",
+        inputSchema: {
+          type: "object",
+          properties: {
+            target_dir: {
+              type: "string",
+              description: "Directory to write the .env file"
+            },
+            overwrite: {
+              type: "boolean",
+              description: "Overwrite existing .env file",
+              default: false
+            }
+          },
+          required: ["target_dir"]
         }
       }
     ]
   };
 });
 
-// 启动服务器
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("AI Builders MCP Coach Server 已启动");
+  console.error("AI Builders MCP Coach Server started");
 }
 
 main().catch((error) => {
-  console.error("服务器启动失败:", error);
+  console.error("Server failed to start:", error);
   process.exit(1);
 });

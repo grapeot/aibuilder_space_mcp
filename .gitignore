@@ -1,65 +1,65 @@
-# Environment variables
+# 环境变量文件
 .env
 .env.local
 .env.*.local
 
-# Cache files
+# 缓存文件
 .deployment_guide_cache.json
 .openapi_cache.json
 
-# Dependencies
+# 依赖文件
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Build output
+# 构建输出
 dist/
 build/
 
-# IDE files
+# IDE文件
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
-# OS files
+# OS文件
 .DS_Store
 Thumbs.db
 
-# Logs
+# 日志文件
 logs/
 *.log
 
-# Runtime data
+# 运行时数据
 pids/
 *.pid
 *.seed
 *.pid.lock
 
-# Coverage directory used by tools like istanbul
+# 测试覆盖
 coverage/
 *.lcov
 
-# nyc test coverage
+# nyc测试覆盖
 .nyc_output
 
-# Dependency directories
+# 依赖目录
 jspm_packages/
 
-# Optional npm cache directory
+# npm缓存
 .npm
 
-# Optional REPL history
+# REPL历史
 .node_repl_history
 
-# Output of 'npm pack'
+# npm打包输出
 *.tgz
 
-# Yarn Integrity file
+# Yarn完整性文件
 .yarn-integrity
 
-# parcel-bundler cache (https://parceljs.org/)
+# parcel缓存
 .cache
 .parcel-cache
