@@ -142,6 +142,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           }
         } catch {}
         
+        // For OpenAI SDK, baseURL should include /v1 since SDK appends paths directly
+        const sdkBaseUrl = baseUrl.endsWith('/v1') ? baseUrl : `${baseUrl}/v1`;
+        
         return {
           content: [
             {
@@ -163,12 +166,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                   recommendation: "We strongly recommend using the OpenAI SDK to interact with this API. It provides a clean, well-documented interface and handles authentication automatically.",
                   usage_note: "You can use OpenAI-compatible SDKs against this API. The OpenAI SDK is the recommended approach.",
                   example_node: {
-                    baseURL: baseUrl,
+                    baseURL: sdkBaseUrl,
                     endpoint: "/v1/chat/completions",
-                    code_example: `import OpenAI from 'openai';\n\nconst openai = new OpenAI({\n  baseURL: '${baseUrl}',\n  apiKey: process.env.AI_BUILDER_TOKEN,\n});\n\nconst completion = await openai.chat.completions.create({\n  model: 'gpt-4',\n  messages: [{ role: 'user', content: 'Hello!' }],\n});`
+                    code_example: `import OpenAI from 'openai';\n\nconst openai = new OpenAI({\n  baseURL: '${sdkBaseUrl}',\n  apiKey: process.env.AI_BUILDER_TOKEN,\n});\n\nconst completion = await openai.chat.completions.create({\n  model: 'grok-4-fast',\n  messages: [{ role: 'user', content: 'Hello!' }],\n});`
                   },
                   example_python: {
-                    code_example: `from openai import OpenAI\nimport os\n\nclient = OpenAI(\n    base_url='${baseUrl}',\n    api_key=os.getenv('AI_BUILDER_TOKEN')\n)\n\ncompletion = client.chat.completions.create(\n    model='gpt-4',\n    messages=[{'role': 'user', 'content': 'Hello!'}]\n)`
+                    code_example: `from openai import OpenAI\nimport os\n\nclient = OpenAI(\n    base_url='${sdkBaseUrl}',\n    api_key=os.getenv('AI_BUILDER_TOKEN')\n)\n\ncompletion = client.chat.completions.create(\n    model='grok-4-fast',\n    messages=[{'role': 'user', 'content': 'Hello!'}]\n)`
                   }
                 },
                 mcp_recommendation: {
