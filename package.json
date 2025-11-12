@@ -1,0 +1,40 @@
+{
+  "name": "@ai-builders/mcp-coach-server",
+  "version": "1.0.0",
+  "description": "MCP server as AI deployment coach for AI Builders platform",
+  "main": "dist/index.js",
+  "type": "module",
+  "bin": {
+    "mcp-coach-server": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "ai",
+    "deployment",
+    "coach",
+    "ai-builders"
+  ],
+  "author": "AI Builders",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.5.0",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ]
+}
