@@ -171,8 +171,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                   }
                 },
                 mcp_recommendation: {
-                  note: "If running via an MCP server, call get_auth_token and then create_env_file to configure .env",
-                  tools: ["get_auth_token", "create_env_file"],
+                  note: "If running via an MCP server, call get_auth_token to retrieve AI_BUILDER_TOKEN and configure your environment manually",
+                  tools: ["get_auth_token"],
                   env_key: "AI_BUILDER_TOKEN"
                 }
               }, null, 2)
@@ -257,54 +257,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
-      case "create_env_file": {
-        const target_dir = args?.target_dir;
-        const overwrite = args?.overwrite === true;
-        if (!target_dir || typeof target_dir !== "string") {
-          throw new Error("target_dir is required");
-        }
-        const token = process.env.AI_BUILDER_TOKEN || "";
-        if (!token) {
-          throw new Error("AI_BUILDER_TOKEN is not set in server environment");
-        }
-        const filePath = join(target_dir, ".env");
-        try {
-          await mkdir(target_dir, { recursive: true });
-          if (!overwrite) {
-            try {
-              await access(filePath);
-              return {
-                content: [
-                  {
-                    type: "text",
-                    text: JSON.stringify({
-                      written: false,
-                      path: filePath,
-                      reason: "File already exists; set overwrite=true to replace"
-                    }, null, 2)
-                  }
-                ]
-              };
-            } catch {}
-          }
-          const envContent = `AI_BUILDER_TOKEN=${token}\n`;
-          await writeFile(filePath, envContent);
-          return {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify({
-                  written: true,
-                  path: filePath
-                }, null, 2)
-              }
-            ]
-          };
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
-          throw new Error(`Failed to write .env: ${msg}`);
-        }
-      }
+      
       
       default:
         throw new Error(`Unknown tool: ${name}`);
@@ -371,25 +324,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               default: true
             }
           }
-        }
-      },
-      {
-        name: "create_env_file",
-        description: "Create a .env file with AI_BUILDER_TOKEN at the target directory",
-        inputSchema: {
-          type: "object",
-          properties: {
-            target_dir: {
-              type: "string",
-              description: "Directory to write the .env file"
-            },
-            overwrite: {
-              type: "boolean",
-              description: "Overwrite existing .env file",
-              default: false
-            }
-          },
-          required: ["target_dir"]
         }
       }
     ]
