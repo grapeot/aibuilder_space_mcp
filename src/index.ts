@@ -159,10 +159,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 },
                 sdk_compatibility: {
                   openai_sdk_compatible: true,
-                  usage_note: "You can use OpenAI-compatible SDKs against this API.",
+                  recommendation: "We strongly recommend using the OpenAI SDK to interact with this API. It provides a clean, well-documented interface and handles authentication automatically.",
+                  usage_note: "You can use OpenAI-compatible SDKs against this API. The OpenAI SDK is the recommended approach.",
                   example_node: {
                     baseURL: baseUrl,
-                    endpoint: "/v1/chat/completions"
+                    endpoint: "/v1/chat/completions",
+                    code_example: `import OpenAI from 'openai';\n\nconst openai = new OpenAI({\n  baseURL: '${baseUrl}',\n  apiKey: process.env.AI_BUILDER_TOKEN,\n});\n\nconst completion = await openai.chat.completions.create({\n  model: 'gpt-4',\n  messages: [{ role: 'user', content: 'Hello!' }],\n});`
+                  },
+                  example_python: {
+                    code_example: `from openai import OpenAI\nimport os\n\nclient = OpenAI(\n    base_url='${baseUrl}',\n    api_key=os.getenv('AI_BUILDER_TOKEN')\n)\n\ncompletion = client.chat.completions.create(\n    model='gpt-4',\n    messages=[{'role': 'user', 'content': 'Hello!'}]\n)`
                   }
                 },
                 mcp_recommendation: {
