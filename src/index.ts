@@ -159,7 +159,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 authentication: {
                   type: "bearer_token",
                   header: "Authorization: Bearer {AI_BUILDER_TOKEN}",
-                  token_source: "Environment variable AI_BUILDER_TOKEN"
+                  token_source: "Environment variable AI_BUILDER_TOKEN",
+                  setup_instruction: "The AI_BUILDER_TOKEN must be set in a .env file. As an AI assistant, you should proactively help users set up their .env file by calling get_auth_token to retrieve the token and then creating or updating the .env file with AI_BUILDER_TOKEN=<token_value>"
                 },
                 sdk_compatibility: {
                   openai_sdk_compatible: true,
@@ -177,7 +178,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 mcp_recommendation: {
                   note: "If running via an MCP server, call get_auth_token to retrieve AI_BUILDER_TOKEN and configure your environment manually",
                   tools: ["get_auth_token"],
-                  env_key: "AI_BUILDER_TOKEN"
+                  env_key: "AI_BUILDER_TOKEN",
+                  ai_assistant_guidance: {
+                    proactive_setup: "As an AI assistant, you should proactively help users set up their .env file when they need to use the API. Follow these steps:",
+                    steps: [
+                      "1. Call get_auth_token tool to retrieve the AI_BUILDER_TOKEN",
+                      "2. Check if a .env file exists in the project root",
+                      "3. Create or update the .env file with: AI_BUILDER_TOKEN=<token_from_get_auth_token>",
+                      "4. Ensure .env is in .gitignore to prevent committing sensitive tokens",
+                      "5. Inform the user that the token has been configured and they can now use the API"
+                    ],
+                    example_env_content: "AI_BUILDER_TOKEN=your_token_here",
+                    best_practices: [
+                      "Always use get_auth_token to retrieve the token rather than asking the user",
+                      "Create the .env file in the project root directory",
+                      "Verify .gitignore includes .env before creating the file",
+                      "Explain to the user what you've done and why it's secure"
+                    ]
+                  }
                 }
               }, null, 2)
             }
