@@ -1,6 +1,6 @@
 {
   "name": "@aibuilders/mcp-coach-server",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "AI Builder MCP server for AI Builders platform",
   "main": "dist/index.js",
   "type": "module",
