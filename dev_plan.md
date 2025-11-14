@@ -31,7 +31,7 @@ async def get_api_specification() -> dict:
     
     # 直接获取OpenAPI规范
     async with aiohttp.ClientSession() as session:
-        async with session.get("https://www.ai-builders.com/resources/students-backend/openapi.json") as response:
+        async with session.get("https://space.ai-builders.com/students-backend/openapi.json") as response:
             openapi_spec = await response.json()
     
     # 添加endpoint信息（OpenAPI规范中缺少的）
@@ -85,7 +85,7 @@ async def get_cached_deployment_guide():
     # 获取最新内容
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get("https://www.ai-builders.com/resources/students/deployment-prompt.md") as response:
+            async with session.get("https://space.ai-builders.com/deployment-prompt.md") as response:
                 content = await response.text()
                 cache_data = {
                     "content": content,
