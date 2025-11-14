@@ -173,7 +173,7 @@ headers = {"Authorization": f"Bearer {token}"}
 ```json
 {
   "mcpServers": {
-    "ai-builders-coach": {
+    "ai-builder-mcp": {
       "command": "npx",
       "args": ["-y", "@ai-builders/mcp-coach-server"],
       "env": {

@@ -1,4 +1,4 @@
-# AI Builders MCP Coach Server
+# AI Builder MCP
 
 An MCP server that provides deployment guidance and API usage support for the AI Builders platform. This README is for end users and focuses on installation and usage, not development.
 
@@ -35,7 +35,7 @@ Example (Claude Desktop `mcpServers`):
 ```json
 {
   "mcpServers": {
-    "ai-builders-coach": {
+    "ai-builder-mcp": {
       "command": "mcp-coach-server",
       "env": {
         "AI_BUILDER_TOKEN": "your_token_here"

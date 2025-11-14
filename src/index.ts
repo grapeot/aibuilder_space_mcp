@@ -108,7 +108,7 @@ async function getCachedDeploymentGuide(): Promise<{
 
 const server = new Server(
   {
-    name: "ai-builders-coach",
+    name: "ai-builder-mcp",
     version: "1.0.0",
   },
   {
@@ -355,7 +355,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("AI Builders MCP Coach Server started");
+  console.error("AI Builder MCP Server started");
 }
 
 main().catch((error) => {

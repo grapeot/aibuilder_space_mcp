@@ -1,4 +1,4 @@
-# AI Builders MCP Coach Server (Developer Guide)
+# AI Builder MCP (Developer Guide)
 
 This document is for internal development and maintenance. It includes local setup, testing with MCP Inspector, and build instructions.
 

@@ -1,7 +1,7 @@
 {
   "name": "@aibuilders/mcp-coach-server",
   "version": "1.0.2",
-  "description": "MCP server as AI deployment coach for AI Builders platform",
+  "description": "AI Builder MCP server for AI Builders platform",
   "main": "dist/index.js",
   "type": "module",
   "bin": {
@@ -19,7 +19,6 @@
     "model-context-protocol",
     "ai",
     "deployment",
-    "coach",
     "ai-builders"
   ],
   "author": "AI Builders",
