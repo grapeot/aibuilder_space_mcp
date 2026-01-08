@@ -23,6 +23,7 @@
   ],
   "author": "AI Builders",
   "license": "MIT",
+  "readme": "README.md",
   "publishConfig": {
     "access": "public"
   },
