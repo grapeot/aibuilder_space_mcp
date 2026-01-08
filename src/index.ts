@@ -124,13 +124,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   try {
     switch (name) {
       case "get_api_specification": {
-        const response = await fetch("https://space.ai-builders.com/students-backend/openapi.json");
+        const response = await fetch("https://space.ai-builders.com/backend/openapi.json");
         if (!response.ok) {
           throw new Error(`Failed to fetch OpenAPI specification: HTTP ${response.status}`);
         }
         
         const openapiSpec = await response.json();
-        let baseUrl = "https://space.ai-builders.com/students-backend";
+        let baseUrl = "https://space.ai-builders.com/backend";
         try {
           if (openapiSpec?.servers?.length) {
             const url = openapiSpec.servers[0].url as string;
