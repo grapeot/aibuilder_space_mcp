@@ -7,10 +7,18 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import dotenv from "dotenv";
 import { readFile, writeFile, access, mkdir } from "fs/promises";
-import { join } from "path";
+import { readFileSync } from "fs";
+import { join, dirname } from "path";
 import { homedir } from "os";
+import { fileURLToPath } from "url";
 
 dotenv.config();
+
+// Get package version from package.json
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const packageJson = JSON.parse(readFileSync(join(__dirname, "../package.json"), "utf-8"));
+const PACKAGE_VERSION = packageJson.version;
 
 const CACHE_DIR = join(homedir(), ".ai-builders-mcp-cache");
 const DEPLOYMENT_GUIDE_CACHE = join(CACHE_DIR, "deployment_guide_cache.json");
@@ -109,7 +117,7 @@ async function getCachedDeploymentGuide(): Promise<{
 const server = new Server(
   {
     name: "ai-builder-mcp",
-    version: "1.0.0",
+    version: PACKAGE_VERSION,
   },
   {
     capabilities: {
@@ -194,6 +202,79 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                       "Create the .env file in the project root directory",
                       "Verify .gitignore includes .env before creating the file",
                       "Explain to the user what you've done and why it's secure"
+                    ]
+                  }
+                },
+                deployment_api_info: {
+                  note: "The deployment API supports environment variable injection via the env_vars field",
+                  key_features: [
+                    "Optional env_vars field in DeploymentCreateRequest (up to 20 variables)",
+                    "Stateless design: environment variables are NOT stored in the platform database",
+                    "Variables are passed directly to Koyeb during deployment",
+                    "AI_BUILDER_TOKEN is automatically injected (no need to include it in env_vars)"
+                  ],
+                  ai_assistant_guidance: {
+                    when_helping_deploy: "When helping users deploy services, you should:",
+                    steps: [
+                      "1. Check if a deploy-config.json file exists in the project",
+                      "2. If not, help create one with deployment parameters (repo_url, service_name, branch, port) and environment variables",
+                      "3. Remind users not to commit sensitive values (passwords, API keys) to Git repositories",
+                      "4. Before deploying, help users test the Dockerfile locally:",
+                      "   - Build the Docker image: docker build -t test-image .",
+                      "   - Run the container locally: docker run -p <port>:<port> -e PORT=<port> test-image",
+                      "   - Verify the service starts correctly and responds to requests",
+                      "   - Test with the same environment variables that will be used in production",
+                      "5. When user says 'deploy', read from deploy-config.json and include env_vars in the API request",
+                      "6. After deployment, monitor the deployment status. If deployment fails:",
+                      "   - Use GET /v1/deployments/{service_name}/logs to retrieve deployment logs",
+                      "   - Check build logs: GET /v1/deployments/{service_name}/logs?log_type=build",
+                      "   - Check runtime logs: GET /v1/deployments/{service_name}/logs?log_type=runtime",
+                      "   - Filter by stream: GET /v1/deployments/{service_name}/logs?stream=stderr (for errors)",
+                      "   - Help users debug based on log output and fix issues",
+                      "7. Guide users to maintain their configuration for future deployments"
+                    ],
+                    log_api_info: {
+                      endpoint: "GET /v1/deployments/{service_name}/logs",
+                      description: "Retrieve deployment logs from Koyeb for debugging failed deployments",
+                      parameters: {
+                        service_name: "Path parameter: The unique service name / subdomain",
+                        log_type: "Query parameter: 'build' or 'runtime' (default: 'runtime')",
+                        stream: "Query parameter: Filter by 'stdout', 'stderr', or 'koyeb'",
+                        timeout: "Query parameter: Seconds to wait for streaming logs (1-300, default: 5)",
+                        deployment_id: "Query parameter: Optional deployment ID override"
+                      },
+                      usage_examples: {
+                        build_logs: "GET /v1/deployments/my-service/logs?log_type=build",
+                        runtime_errors: "GET /v1/deployments/my-service/logs?log_type=runtime&stream=stderr",
+                        all_logs: "GET /v1/deployments/my-service/logs?log_type=runtime&timeout=30"
+                      },
+                      when_to_use: [
+                        "When deployment status shows ERROR, UNHEALTHY, or DEGRADED",
+                        "To debug why a service is not starting correctly",
+                        "To check build-time errors during Docker image creation",
+                        "To monitor runtime errors and application logs"
+                      ]
+                    },
+                    example_deploy_config: {
+                      description: "Example deploy-config.json structure",
+                      content: {
+                        repo_url: "https://github.com/user/my-app",
+                        service_name: "my-app",
+                        branch: "main",
+                        port: 8000,
+                        env_vars: {
+                          DATABASE_URL: "postgresql://user:pass@host:5432/db",
+                          NODE_ENV: "production",
+                          LOG_LEVEL: "info"
+                        }
+                      }
+                    },
+                    best_practices: [
+                      "Maintain environment variables in version-controlled config files (deploy-config.json)",
+                      "Use .env files for sensitive values during development (add to .gitignore)",
+                      "Never include AI_BUILDER_TOKEN in env_vars (it's automatically injected)",
+                      "Create deployment scripts that read from config files",
+                      "Help users understand the stateless nature of env_vars"
                     ]
                   }
                 }
