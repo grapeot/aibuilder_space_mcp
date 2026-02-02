@@ -360,7 +360,94 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
-      
+      case "get_base_url": {
+        let baseUrl = "https://space.ai-builders.com/backend";
+        let source = "default";
+        
+        try {
+          const response = await fetch("https://space.ai-builders.com/backend/openapi.json");
+          if (response.ok) {
+            const openapiSpec = await response.json();
+            try {
+              if (openapiSpec?.servers?.length) {
+                const url = openapiSpec.servers[0].url as string;
+                if (url.startsWith("http")) {
+                  baseUrl = url;
+                } else {
+                  baseUrl = `https://space.ai-builders.com${url}`;
+                }
+                source = "openapi_spec";
+              }
+            } catch {}
+          }
+        } catch (error) {
+          // If fetch fails, use default base URL
+        }
+        
+        // For OpenAI SDK, baseURL should include /v1 since SDK appends paths directly
+        const sdkBaseUrl = baseUrl.endsWith('/v1') ? baseUrl : `${baseUrl}/v1`;
+        
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                base_url: baseUrl,
+                sdk_base_url: sdkBaseUrl,
+                source: source,
+                prompt_for_ai: `The base URL for AI Builders Space API is: ${baseUrl}
+
+This is the base URL you should use for all API calls to the AI Builders Space platform. When making HTTP requests, prepend this base URL to the API endpoint paths.
+
+For example:
+- Full endpoint URL: ${baseUrl}/v1/chat/completions
+- Full endpoint URL: ${baseUrl}/v1/deployments
+
+If you are using the OpenAI SDK (recommended), use this base URL: ${sdkBaseUrl}
+
+The base URL is also documented in the deployment guide, but this tool provides a direct way to retrieve it without parsing the full deployment guide.`,
+                usage_examples: {
+                  direct_http: {
+                    description: "Direct HTTP requests",
+                    base_url: baseUrl,
+                    example: `const response = await fetch('${baseUrl}/v1/chat/completions', {
+  method: 'POST',
+  headers: {
+    'Authorization': \`Bearer \${process.env.AI_BUILDER_TOKEN}\`,
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({ model: 'grok-4-fast', messages: [...] })
+});`
+                  },
+                  openai_sdk: {
+                    description: "OpenAI SDK (recommended)",
+                    base_url: sdkBaseUrl,
+                    example_node: `import OpenAI from 'openai';
+
+const openai = new OpenAI({
+  baseURL: '${sdkBaseUrl}',
+  apiKey: process.env.AI_BUILDER_TOKEN,
+});`,
+                    example_python: `from openai import OpenAI
+import os
+
+client = OpenAI(
+    base_url='${sdkBaseUrl}',
+    api_key=os.getenv('AI_BUILDER_TOKEN')
+)`
+                  }
+                },
+                important_notes: [
+                  "Always use this base URL when making API calls to AI Builders Space",
+                  "The base URL includes the /backend path",
+                  "For OpenAI SDK compatibility, use the sdk_base_url which includes /v1",
+                  "All API calls require authentication via AI_BUILDER_TOKEN in the Authorization header"
+                ]
+              }, null, 2)
+            }
+          ]
+        };
+      }
       
       default:
         throw new Error(`Unknown tool: ${name}`);
@@ -427,6 +514,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               default: true
             }
           }
+        }
+      },
+      {
+        name: "get_base_url",
+        description: "Get the base URL for AI Builders Space API. This tool provides a direct way to retrieve the base URL without parsing the deployment guide.",
+        inputSchema: {
+          type: "object",
+          properties: {}
         }
       }
     ]
