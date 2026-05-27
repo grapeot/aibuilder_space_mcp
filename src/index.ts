@@ -22,6 +22,59 @@ const PACKAGE_VERSION = packageJson.version;
 
 const CACHE_DIR = join(homedir(), ".ai-builders-mcp-cache");
 const DEPLOYMENT_GUIDE_CACHE = join(CACHE_DIR, "deployment_guide_cache.json");
+const OPENAPI_SPEC_CACHE = join(CACHE_DIR, "openapi_spec_cache.json");
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const API_ORIGIN = "https://space.ai-builders.com";
+const DEFAULT_API_BASE_URL = `${API_ORIGIN}/backend`;
+const OPENAPI_SPEC_URL = `${DEFAULT_API_BASE_URL}/openapi.json`;
+const DEPLOYMENT_GUIDE_URL = `${API_ORIGIN}/deployment-prompt.md`;
+
+type CachedOpenApiSpec = {
+  spec: OpenApiSpec;
+  cached_at?: string;
+  source: "cache" | "remote" | "stale_cache";
+};
+
+type OpenApiSpec = {
+  servers?: Array<{ url?: string }>;
+  [key: string]: unknown;
+};
+
+function isCacheFresh(cachedAt?: string): boolean {
+  if (!cachedAt) {
+    return false;
+  }
+  const cachedTime = new Date(cachedAt);
+  if (Number.isNaN(cachedTime.getTime())) {
+    return false;
+  }
+  return Date.now() - cachedTime.getTime() < CACHE_TTL_MS;
+}
+
+function isMissingFileError(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "ENOENT";
+}
+
+function deriveBaseUrl(openapiSpec: OpenApiSpec): string {
+  let baseUrl = DEFAULT_API_BASE_URL;
+  try {
+    if (openapiSpec?.servers?.length) {
+      const url = openapiSpec.servers[0].url;
+      if (typeof url === "string" && url.startsWith("http")) {
+        baseUrl = url;
+      } else if (typeof url === "string") {
+        baseUrl = `${API_ORIGIN}${url}`;
+      }
+    }
+  } catch (error) {
+    console.error("Failed to derive base URL from OpenAPI spec:", error);
+  }
+  return baseUrl;
+}
+
+function getSdkBaseUrl(baseUrl: string): string {
+  return baseUrl.endsWith('/v1') ? baseUrl : `${baseUrl}/v1`;
+}
 
 async function ensureCacheDir() {
   try {
@@ -79,14 +132,17 @@ async function getCachedDeploymentGuide(): Promise<{
     const cachedTime = new Date(cacheData.cached_at);
     const now = new Date();
     
-    if (now.getTime() - cachedTime.getTime() < 24 * 60 * 60 * 1000) {
+    if (now.getTime() - cachedTime.getTime() < CACHE_TTL_MS) {
       return cacheData;
     }
-  } catch {
+  } catch (error) {
+    if (!isMissingFileError(error)) {
+      console.error("Deployment guide cache read failed:", error);
+    }
   }
   
   try {
-    const response = await fetch("https://space.ai-builders.com/deployment-prompt.md");
+    const response = await fetch(DEPLOYMENT_GUIDE_URL);
     if (response.ok) {
       const content = await response.text();
       const cacheData = {
@@ -114,6 +170,63 @@ async function getCachedDeploymentGuide(): Promise<{
   };
 }
 
+async function getCachedOpenApiSpec(forceRefresh: boolean = false): Promise<CachedOpenApiSpec> {
+  await ensureCacheDir();
+
+  let cachedSpec: { spec: OpenApiSpec; cached_at?: string } | null = null;
+  try {
+    const cacheContent = await readFile(OPENAPI_SPEC_CACHE, "utf-8");
+    cachedSpec = JSON.parse(cacheContent);
+    if (cachedSpec && !forceRefresh && isCacheFresh(cachedSpec.cached_at)) {
+      return {
+        spec: cachedSpec.spec,
+        cached_at: cachedSpec.cached_at,
+        source: "cache"
+      };
+    }
+  } catch (error) {
+    if (!isMissingFileError(error)) {
+      console.error("OpenAPI cache read failed:", error);
+    }
+  }
+
+  try {
+    const response = await fetch(OPENAPI_SPEC_URL);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch OpenAPI specification: HTTP ${response.status}`);
+    }
+
+    const spec = await response.json() as OpenApiSpec;
+    const cacheData = {
+      spec,
+      cached_at: new Date().toISOString(),
+      url: OPENAPI_SPEC_URL
+    };
+
+    try {
+      await writeFile(OPENAPI_SPEC_CACHE, JSON.stringify(cacheData, null, 2));
+    } catch (error) {
+      console.error("OpenAPI cache write failed:", error);
+    }
+
+    return {
+      spec,
+      cached_at: cacheData.cached_at,
+      source: "remote"
+    };
+  } catch (error) {
+    if (cachedSpec?.spec) {
+      console.error("Failed to fetch OpenAPI specification; using stale cache:", error);
+      return {
+        spec: cachedSpec.spec,
+        cached_at: cachedSpec.cached_at,
+        source: "stale_cache"
+      };
+    }
+    throw error;
+  }
+}
+
 const server = new Server(
   {
     name: "ai-builder-mcp",
@@ -132,26 +245,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   try {
     switch (name) {
       case "get_api_specification": {
-        const response = await fetch("https://space.ai-builders.com/backend/openapi.json");
-        if (!response.ok) {
-          throw new Error(`Failed to fetch OpenAPI specification: HTTP ${response.status}`);
-        }
-        
-        const openapiSpec = await response.json();
-        let baseUrl = "https://space.ai-builders.com/backend";
-        try {
-          if (openapiSpec?.servers?.length) {
-            const url = openapiSpec.servers[0].url as string;
-            if (url.startsWith("http")) {
-              baseUrl = url;
-            } else {
-              baseUrl = `https://space.ai-builders.com${url}`;
-            }
-          }
-        } catch {}
-        
+        const forceRefresh = args?.force_refresh === true;
+        const cachedOpenApi = await getCachedOpenApiSpec(forceRefresh);
+        const openapiSpec = cachedOpenApi.spec;
+        const baseUrl = deriveBaseUrl(openapiSpec);
+
         // For OpenAI SDK, baseURL should include /v1 since SDK appends paths directly
-        const sdkBaseUrl = baseUrl.endsWith('/v1') ? baseUrl : `${baseUrl}/v1`;
+        const sdkBaseUrl = getSdkBaseUrl(baseUrl);
         
         return {
           content: [
@@ -159,6 +259,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               type: "text",
               text: JSON.stringify({
                 openapi_spec: openapiSpec,
+                cache: {
+                  source: cachedOpenApi.source,
+                  cached_at: cachedOpenApi.cached_at,
+                  ttl_hours: 24,
+                  openapi_spec_url: OPENAPI_SPEC_URL
+                },
                 endpoint_info: {
                   base_url: baseUrl,
                   description: "Base URL for the AI Builders API",
@@ -361,31 +467,32 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case "get_base_url": {
-        let baseUrl = "https://space.ai-builders.com/backend";
+        const forceRefresh = args?.force_refresh === true;
+        let baseUrl = DEFAULT_API_BASE_URL;
         let source = "default";
-        
+        let cache: {
+          source: CachedOpenApiSpec["source"];
+          cached_at?: string;
+          ttl_hours: number;
+          openapi_spec_url: string;
+        } | null = null;
+
         try {
-          const response = await fetch("https://space.ai-builders.com/backend/openapi.json");
-          if (response.ok) {
-            const openapiSpec = await response.json();
-            try {
-              if (openapiSpec?.servers?.length) {
-                const url = openapiSpec.servers[0].url as string;
-                if (url.startsWith("http")) {
-                  baseUrl = url;
-                } else {
-                  baseUrl = `https://space.ai-builders.com${url}`;
-                }
-                source = "openapi_spec";
-              }
-            } catch {}
-          }
+          const cachedOpenApi = await getCachedOpenApiSpec(forceRefresh);
+          baseUrl = deriveBaseUrl(cachedOpenApi.spec);
+          source = "openapi_spec";
+          cache = {
+            source: cachedOpenApi.source,
+            cached_at: cachedOpenApi.cached_at,
+            ttl_hours: 24,
+            openapi_spec_url: OPENAPI_SPEC_URL
+          };
         } catch (error) {
-          // If fetch fails, use default base URL
+          console.error("Failed to fetch OpenAPI specification for base URL; using default:", error);
         }
-        
+
         // For OpenAI SDK, baseURL should include /v1 since SDK appends paths directly
-        const sdkBaseUrl = baseUrl.endsWith('/v1') ? baseUrl : `${baseUrl}/v1`;
+        const sdkBaseUrl = getSdkBaseUrl(baseUrl);
         
         return {
           content: [
@@ -394,7 +501,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               text: JSON.stringify({
                 base_url: baseUrl,
                 sdk_base_url: sdkBaseUrl,
-                source: source,
+                source,
+                cache,
                 prompt_for_ai: `The base URL for AI Builders Space API is: ${baseUrl}
 
 This is the base URL you should use for all API calls to the AI Builders Space platform. When making HTTP requests, prepend this base URL to the API endpoint paths.
@@ -477,7 +585,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         description: "Retrieve the OpenAPI specification with endpoint details",
         inputSchema: {
           type: "object",
-          properties: {}
+          properties: {
+            force_refresh: {
+              type: "boolean",
+              description: "Bypass the 24-hour OpenAPI cache and fetch the latest specification",
+              default: false
+            }
+          }
         }
       },
       {
@@ -521,7 +635,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         description: "Get the base URL for AI Builders Space API. This tool provides a direct way to retrieve the base URL without parsing the deployment guide.",
         inputSchema: {
           type: "object",
-          properties: {}
+          properties: {
+            force_refresh: {
+              type: "boolean",
+              description: "Bypass the 24-hour OpenAPI cache and fetch the latest specification",
+              default: false
+            }
+          }
         }
       }
     ]
