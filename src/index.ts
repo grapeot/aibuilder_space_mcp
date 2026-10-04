@@ -11,6 +11,7 @@ import { readFileSync } from "fs";
 import { join, dirname } from "path";
 import { homedir } from "os";
 import { fileURLToPath } from "url";
+import { applyDeploymentContract, deploymentLifecycle } from "./deployment-guidance.js";
 
 dotenv.config();
 
@@ -85,7 +86,7 @@ async function ensureCacheDir() {
 }
 
 function getDefaultDeploymentGuide(serviceType: string = "fastapi"): string {
-  return `# ${serviceType.toUpperCase()} Service Deployment Guide
+  return applyDeploymentContract(`# ${serviceType.toUpperCase()} Service Deployment Guide
 
 ## Prerequisites
 - Public GitHub repository
@@ -96,7 +97,7 @@ function getDefaultDeploymentGuide(serviceType: string = "fastapi"): string {
 1. Prepare a Dockerfile
 2. Configure environment variables
 3. Set AI_BUILDER_TOKEN
-4. Deploy to target platform
+4. Submit POST /v1/deployments, then monitor status and fetch logs on demand
 
 ## Authentication
 - Use Bearer Token authentication
@@ -116,10 +117,10 @@ import os
 
 token = os.getenv("AI_BUILDER_TOKEN")
 headers = {"Authorization": f"Bearer {token}"}
-\`\`\``;
+\`\`\``);
 }
 
-async function getCachedDeploymentGuide(): Promise<{
+async function getCachedDeploymentGuide(forceRefresh: boolean = false, serviceType: string = "fastapi"): Promise<{
   content: string;
   cached_at?: string;
   source: string;
@@ -129,11 +130,9 @@ async function getCachedDeploymentGuide(): Promise<{
   try {
     const cacheContent = await readFile(DEPLOYMENT_GUIDE_CACHE, 'utf-8');
     const cacheData = JSON.parse(cacheContent);
-    const cachedTime = new Date(cacheData.cached_at);
-    const now = new Date();
-    
-    if (now.getTime() - cachedTime.getTime() < CACHE_TTL_MS) {
-      return cacheData;
+    if (!forceRefresh && cacheData.package_version === PACKAGE_VERSION &&
+        typeof cacheData.content === "string" && isCacheFresh(cacheData.cached_at)) {
+      return { content: cacheData.content, cached_at: cacheData.cached_at, source: "cache" };
     }
   } catch (error) {
     if (!isMissingFileError(error)) {
@@ -148,6 +147,7 @@ async function getCachedDeploymentGuide(): Promise<{
       const cacheData = {
         content,
         cached_at: new Date().toISOString(),
+        package_version: PACKAGE_VERSION,
         source: "remote"
       };
       
@@ -164,7 +164,7 @@ async function getCachedDeploymentGuide(): Promise<{
   }
   
   return {
-    content: getDefaultDeploymentGuide(),
+    content: getDefaultDeploymentGuide(serviceType),
     cached_at: new Date().toISOString(),
     source: "default"
   };
@@ -173,11 +173,11 @@ async function getCachedDeploymentGuide(): Promise<{
 async function getCachedOpenApiSpec(forceRefresh: boolean = false): Promise<CachedOpenApiSpec> {
   await ensureCacheDir();
 
-  let cachedSpec: { spec: OpenApiSpec; cached_at?: string } | null = null;
+  let cachedSpec: { spec: OpenApiSpec; cached_at?: string; package_version?: string } | null = null;
   try {
     const cacheContent = await readFile(OPENAPI_SPEC_CACHE, "utf-8");
     cachedSpec = JSON.parse(cacheContent);
-    if (cachedSpec && !forceRefresh && isCacheFresh(cachedSpec.cached_at)) {
+    if (cachedSpec && cachedSpec.package_version === PACKAGE_VERSION && !forceRefresh && isCacheFresh(cachedSpec.cached_at)) {
       return {
         spec: cachedSpec.spec,
         cached_at: cachedSpec.cached_at,
@@ -200,6 +200,7 @@ async function getCachedOpenApiSpec(forceRefresh: boolean = false): Promise<Cach
     const cacheData = {
       spec,
       cached_at: new Date().toISOString(),
+      package_version: PACKAGE_VERSION,
       url: OPENAPI_SPEC_URL
     };
 
@@ -313,6 +314,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 },
                 deployment_api_info: {
                   note: "The deployment API supports environment variable injection via the env_vars field",
+                  lifecycle: deploymentLifecycle,
                   key_features: [
                     "Optional env_vars field in DeploymentCreateRequest (up to 20 variables)",
                     "Stateless design: environment variables are NOT stored in the platform database",
@@ -331,7 +333,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                       "   - Verify the service starts correctly and responds to requests",
                       "   - Test with the same environment variables that will be used in production",
                       "5. When user says 'deploy', read from deploy-config.json and include env_vars in the API request",
-                      "6. After deployment, monitor the deployment status. If deployment fails:",
+                      "6. POST /v1/deployments returns 202 after accepting the task; streaming_logs is null by design. Do not treat either as deployment success or failure.",
+                      "   - Poll GET /v1/deployments/{service_name} while queued/deploying; do not resubmit POST because logs are empty",
+                      "   - Omit the deprecated streaming_log_timeout_seconds field",
+                      "   - After HEALTHY, verify the public URL; diagnose ERROR, UNHEALTHY or DEGRADED with live logs",
                       "   - Use GET /v1/deployments/{service_name}/logs to retrieve deployment logs",
                       "   - Check build logs: GET /v1/deployments/{service_name}/logs?log_type=build",
                       "   - Check runtime logs: GET /v1/deployments/{service_name}/logs?log_type=runtime",
@@ -358,7 +363,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                         "When deployment status shows ERROR, UNHEALTHY, or DEGRADED",
                         "To debug why a service is not starting correctly",
                         "To check build-time errors during Docker image creation",
-                        "To monitor runtime errors and application logs"
+                        "To monitor runtime errors and application logs",
+                        "For progress during provisioning; empty logs do not prove failure"
                       ]
                     },
                     example_deploy_config: {
@@ -392,17 +398,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       
       case "get_deployment_guide": {
         const serviceType = args?.service_type || "fastapi";
-        const cachedGuide = await getCachedDeploymentGuide();
+        const forceRefresh = args?.force_refresh === true;
+        const cachedGuide = await getCachedDeploymentGuide(forceRefresh, String(serviceType));
         
         return {
           content: [
             {
               type: "text",
               text: JSON.stringify({
-                deployment_guide: cachedGuide.content,
+                deployment_guide: applyDeploymentContract(cachedGuide.content),
+                deployment_lifecycle: deploymentLifecycle,
+                deployment_contract_source: "package",
                 service_type: serviceType,
                 cached_at: cachedGuide.cached_at,
                 source: cachedGuide.source,
+                cache: { ttl_hours: 24, guide_url: DEPLOYMENT_GUIDE_URL, package_version: PACKAGE_VERSION },
                 authentication_note: "Both deployment and development require AI_BUILDER_TOKEN; manage it via a .env file"
               }, null, 2)
             }
@@ -604,6 +614,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: "string",
               description: "Service type (e.g., fastapi, express)",
               default: "fastapi"
+            },
+            force_refresh: {
+              type: "boolean",
+              description: "Bypass the 24-hour deployment guide cache and fetch the latest guide",
+              default: false
             }
           }
         }
