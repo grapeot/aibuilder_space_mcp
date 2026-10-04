@@ -1,6 +1,6 @@
 {
   "name": "@aibuilders/mcp-coach-server",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "description": "AI Builder MCP server for AI Builders platform",
   "main": "dist/index.js",
   "type": "module",
@@ -39,6 +39,8 @@
   "files": [
     "dist/index.js",
     "dist/index.d.ts",
+    "dist/deployment-guidance.js",
+    "dist/deployment-guidance.d.ts",
     "README.md",
     "LICENSE"
   ]
